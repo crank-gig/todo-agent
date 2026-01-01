@@ -40,6 +40,7 @@ def ask_groq(todo):
 
     return response.json()["choices"][0]["message"]["content"]
 
+
 def ask_anthropic(todo):
     prompt = f"""
     Write ONLY the Python code needed to fix this TODO.
@@ -79,6 +80,7 @@ def ask_anthropic(todo):
         response.raise_for_status()
 
     return response.json()["choices"][0]["message"]["content"]
+
 
 def ask_github(todo):
     prompt = f"""

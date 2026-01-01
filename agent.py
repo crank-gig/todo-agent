@@ -1,15 +1,14 @@
 import os
 import re
-import json
+import time
 import requests
 import subprocess
 from dotenv import load_dotenv
 
-load_dotenv()
+from app.verifier import verify
+from app.metrics import record_metrics
 
-VITE_GITHUB_ACCESS_TOKEN = os.getenv("VITE_GITHUB_ACCESS_TOKEN")
-if not VITE_GITHUB_ACCESS_TOKEN:
-    raise RuntimeError("VITE_GITHUB_ACCESS_TOKEN is not set")
+load_dotenv()
 
 FILE_PATH = "app/main.py"
 
@@ -66,18 +65,33 @@ def apply_patch(code):
         f.write("\n" + code + "\n")
 
 
-def run_tests():
+def run_tests_in_docker():
     result = subprocess.run(
-        ["pytest"],
+        [
+            "docker", "run", "--rm",
+            "-v", f"{os.getcwd()}:/workspace",
+            "crankgig/todo-agent-sandbox"
+        ],
         capture_output=True,
         text=True
     )
-    return result.stdout, result.returncode
+    return result.stdout, result.stderr, result.returncode
+
+
+def run_tests():
+    stdout, stderr, exit_code = run_tests_in_docker()
+    return {
+        "stdout": stdout,
+        "stderr": stderr,
+        "exit_code": exit_code
+    }
+
 
 
 def main():
-    todo = extract_todo()
+    start = time.time()
 
+    todo = extract_todo()
     if not todo:
         print("No TODO found.")
         return
@@ -85,18 +99,19 @@ def main():
     print(f"Found TODO: {todo}")
 
     code = ask_model(todo)
-    print("\nGenerated code:\n", code)
-
     apply_patch(code)
 
-    print("\nRunning tests...")
-    output, exit_code = run_tests()
-    print(output)
+    test_result = run_tests()
+    verification = verify(test_result)
 
-    if exit_code == 0:
-        print("✓ Week 1 agent succeeded.")
+    duration = round(time.time() - start, 2)
+    record_metrics(todo, verification, duration)
+
+    if verification["status"] == "pass":
+        print("✓ Agent succeeded.")
     else:
-        print("✗ Tests failed. Agent incomplete.")
+        print(f"✗ Agent failed ({verification['failure_type']})")
+
 
 
 if __name__ == "__main__":
